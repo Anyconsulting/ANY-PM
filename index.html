@@ -2001,18 +2001,18 @@
     const SUPABASE_KEY = 'sb_publishable_b2iIS8CgLQ4k2LkFW_5K1A_ysJShQnr';
     
     // Initialize Supabase client
-    let supabase = null;
+    let supabaseClient = null;
     if (USE_SUPABASE) {
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     }
     
     // ==================== SUPABASE FUNCTIONS ====================
     async function loadFromSupabase() {
-      if (!USE_SUPABASE || !supabase) return false;
+      if (!USE_SUPABASE || !supabaseClient) return false;
       
       try {
         // Load team members
-        const { data: teamMembers, error: tmError } = await supabase
+        const { data: teamMembers, error: tmError } = await supabaseClient
           .from('team_members')
           .select('*');
         if (!tmError && teamMembers?.length) {
@@ -2027,20 +2027,20 @@
         }
         
         // Load clients
-        const { data: clients, error: cError } = await supabase
+        const { data: clients, error: cError } = await supabaseClient
           .from('clients')
           .select('*');
         if (!cError && clients?.length) {
           appData.clients = await Promise.all(clients.map(async (c) => {
             // Load tasks for this client
-            const { data: tasks } = await supabase
+            const { data: tasks } = await supabaseClient
               .from('tasks')
               .select('*')
               .eq('client_id', c.id)
               .order('task_number');
             
             // Load activity for this client
-            const { data: activity } = await supabase
+            const { data: activity } = await supabaseClient
               .from('activity')
               .select('*')
               .eq('client_id', c.id)
@@ -2074,7 +2074,7 @@
         }
         
         // Load leads
-        const { data: leads, error: lError } = await supabase
+        const { data: leads, error: lError } = await supabaseClient
           .from('leads')
           .select('*');
         if (!lError && leads?.length) {
@@ -2134,10 +2134,10 @@
     }
     
     async function saveClientToSupabase(client) {
-      if (!USE_SUPABASE || !supabase) return;
+      if (!USE_SUPABASE || !supabaseClient) return;
       
       try {
-        const { error } = await supabase
+        const { error } = await supabaseClient
           .from('clients')
           .upsert({
             id: client.id,
@@ -2157,10 +2157,10 @@
     }
     
     async function saveTaskToSupabase(task, clientId, parentId = null) {
-      if (!USE_SUPABASE || !supabase) return;
+      if (!USE_SUPABASE || !supabaseClient) return;
       
       try {
-        const { error } = await supabase
+        const { error } = await supabaseClient
           .from('tasks')
           .upsert({
             id: task.id,
@@ -2185,10 +2185,10 @@
     }
     
     async function addClientToSupabase(client) {
-      if (!USE_SUPABASE || !supabase) return client;
+      if (!USE_SUPABASE || !supabaseClient) return client;
       
       try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
           .from('clients')
           .insert({
             name: client.name,
@@ -2219,10 +2219,10 @@
     }
     
     async function addTaskToSupabase(task, clientId) {
-      if (!USE_SUPABASE || !supabase) return task;
+      if (!USE_SUPABASE || !supabaseClient) return task;
       
       try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
           .from('tasks')
           .insert({
             client_id: clientId,
