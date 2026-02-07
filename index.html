@@ -1472,6 +1472,7 @@
     .toast.success { border-left: 3px solid var(--accent-green); }
     .toast.error { border-left: 3px solid var(--accent-red); }
     .toast.info { border-left: 3px solid var(--accent-blue); }
+    .toast.warning { border-left: 3px solid var(--accent-yellow); }
 
     /* Responsive */
     @media (max-width: 1100px) {
@@ -1954,14 +1955,302 @@
     </div>
   </div>
 
+  <!-- Add Client Modal -->
+  <div class="modal-overlay" id="modal-add-client">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Add New Client</h2>
+        <button class="modal-close" data-close="modal-add-client">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Client Name</label>
+          <input type="text" id="new-client-name" placeholder="e.g., Acme Corporation">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Initials</label>
+            <input type="text" id="new-client-initials" placeholder="e.g., AC" maxlength="3">
+          </div>
+          <div class="form-group">
+            <label>Color</label>
+            <select id="new-client-color">
+              <option value="blue">Blue</option>
+              <option value="green">Green</option>
+              <option value="purple">Purple</option>
+              <option value="orange">Orange</option>
+              <option value="cyan">Cyan</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close="modal-add-client">Cancel</button>
+        <button class="btn btn-primary" id="save-new-client">Add Client</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-container" id="toast-container"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
     // ==================== CONFIGURATION ====================
-    // Set USE_SUPABASE to true and add your credentials to enable cloud database
-    const USE_SUPABASE = true;  // Change to true to use Supabase
-    const SUPABASE_URL = 'https://tmozozxzcndbfekywpee.supabase.co';  // Paste your Project URL here
-    const SUPABASE_KEY = 'sb_publishable_b2iIS8CgLQ4k2LkFW_5K1A_ysJShQnr';  // Paste your Publishable Key here
+    const USE_SUPABASE = true;
+    const SUPABASE_URL = 'https://tmozozxzcndbfekywpee.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_b2iIS8CgLQ4k2LkFW_5K1A_ysJShQnr';
+    
+    // Initialize Supabase client
+    let supabase = null;
+    if (USE_SUPABASE) {
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    }
+    
+    // ==================== SUPABASE FUNCTIONS ====================
+    async function loadFromSupabase() {
+      if (!USE_SUPABASE || !supabase) return false;
+      
+      try {
+        // Load team members
+        const { data: teamMembers, error: tmError } = await supabase
+          .from('team_members')
+          .select('*');
+        if (!tmError && teamMembers?.length) {
+          appData.teamMembers = teamMembers.map(tm => ({
+            id: tm.id,
+            email: tm.email,
+            name: tm.name,
+            role: tm.role_id,
+            billableRate: tm.billable_rate,
+            color: tm.avatar_color
+          }));
+        }
+        
+        // Load clients
+        const { data: clients, error: cError } = await supabase
+          .from('clients')
+          .select('*');
+        if (!cError && clients?.length) {
+          appData.clients = await Promise.all(clients.map(async (c) => {
+            // Load tasks for this client
+            const { data: tasks } = await supabase
+              .from('tasks')
+              .select('*')
+              .eq('client_id', c.id)
+              .order('task_number');
+            
+            // Load activity for this client
+            const { data: activity } = await supabase
+              .from('activity')
+              .select('*')
+              .eq('client_id', c.id)
+              .order('created_at', { ascending: false });
+            
+            return {
+              id: c.id,
+              name: c.name,
+              initials: c.initials || c.name.substring(0,2).toUpperCase(),
+              color: c.color || 'blue',
+              status: c.status || 'active',
+              budget: c.budget || 0,
+              roleAssignments: c.role_assignments || {},
+              observers: c.observers || [],
+              tasks: buildTaskHierarchy(tasks || []),
+              activity: (activity || []).map(a => ({
+                id: a.id,
+                author: a.author_id,
+                time: new Date(a.created_at).toLocaleDateString(),
+                body: a.body,
+                attachments: a.attachments || []
+              })),
+              kanbanColumns: c.kanban_columns || [
+                { id: 'not_started', label: 'Not Started', color: '#6e7681' },
+                { id: 'started', label: 'Started', color: '#58a6ff' },
+                { id: 'needs_info', label: 'Needs Info', color: '#d29922' },
+                { id: 'complete', label: 'Completed', color: '#3fb950' }
+              ]
+            };
+          }));
+        }
+        
+        // Load leads
+        const { data: leads, error: lError } = await supabase
+          .from('leads')
+          .select('*');
+        if (!lError && leads?.length) {
+          appData.leads = leads.map(l => ({
+            id: l.id,
+            name: l.name,
+            stage: l.stage,
+            color: l.color || 'cyan'
+          }));
+        }
+        
+        console.log('✅ Data loaded from Supabase');
+        return true;
+      } catch (err) {
+        console.error('❌ Supabase load error:', err);
+        return false;
+      }
+    }
+    
+    function buildTaskHierarchy(flatTasks) {
+      if (!flatTasks?.length) return [];
+      
+      const taskMap = {};
+      const rootTasks = [];
+      
+      // First pass: create task objects
+      flatTasks.forEach(t => {
+        taskMap[t.id] = {
+          id: t.id,
+          number: t.task_number,
+          title: t.title,
+          type: t.type || 'task',
+          status: t.status || 'not_started',
+          dueDate: t.due_date,
+          estHours: t.est_hours || 0,
+          actualHours: t.actual_hours || 0,
+          actualFees: t.actual_fees || 0,
+          assignees: t.assignees || [],
+          predecessors: t.predecessors || [],
+          successors: t.successors || [],
+          expanded: true,
+          children: [],
+          parentId: t.parent_id
+        };
+      });
+      
+      // Second pass: build hierarchy
+      flatTasks.forEach(t => {
+        if (t.parent_id && taskMap[t.parent_id]) {
+          taskMap[t.parent_id].children.push(taskMap[t.id]);
+        } else {
+          rootTasks.push(taskMap[t.id]);
+        }
+      });
+      
+      return rootTasks;
+    }
+    
+    async function saveClientToSupabase(client) {
+      if (!USE_SUPABASE || !supabase) return;
+      
+      try {
+        const { error } = await supabase
+          .from('clients')
+          .upsert({
+            id: client.id,
+            name: client.name,
+            initials: client.initials,
+            color: client.color,
+            status: client.status,
+            budget: client.budget,
+            role_assignments: client.roleAssignments,
+            observers: client.observers,
+            kanban_columns: client.kanbanColumns
+          });
+        if (error) console.error('Save client error:', error);
+      } catch (err) {
+        console.error('Save client error:', err);
+      }
+    }
+    
+    async function saveTaskToSupabase(task, clientId, parentId = null) {
+      if (!USE_SUPABASE || !supabase) return;
+      
+      try {
+        const { error } = await supabase
+          .from('tasks')
+          .upsert({
+            id: task.id,
+            client_id: clientId,
+            parent_id: parentId,
+            task_number: task.number,
+            title: task.title,
+            type: task.type,
+            status: task.status,
+            due_date: task.dueDate,
+            est_hours: task.estHours,
+            actual_hours: task.actualHours,
+            actual_fees: task.actualFees,
+            assignees: task.assignees,
+            predecessors: task.predecessors,
+            successors: task.successors
+          });
+        if (error) console.error('Save task error:', error);
+      } catch (err) {
+        console.error('Save task error:', err);
+      }
+    }
+    
+    async function addClientToSupabase(client) {
+      if (!USE_SUPABASE || !supabase) return client;
+      
+      try {
+        const { data, error } = await supabase
+          .from('clients')
+          .insert({
+            name: client.name,
+            initials: client.initials,
+            color: client.color,
+            status: 'active',
+            budget: 0,
+            role_assignments: {},
+            observers: [],
+            kanban_columns: [
+              { id: 'not_started', label: 'Not Started', color: '#6e7681' },
+              { id: 'started', label: 'Started', color: '#58a6ff' },
+              { id: 'complete', label: 'Completed', color: '#3fb950' }
+            ]
+          })
+          .select()
+          .single();
+        
+        if (error) {
+          console.error('Add client error:', error);
+          return client;
+        }
+        return { ...client, id: data.id };
+      } catch (err) {
+        console.error('Add client error:', err);
+        return client;
+      }
+    }
+    
+    async function addTaskToSupabase(task, clientId) {
+      if (!USE_SUPABASE || !supabase) return task;
+      
+      try {
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert({
+            client_id: clientId,
+            task_number: task.number,
+            title: task.title,
+            type: task.type,
+            status: task.status,
+            due_date: task.dueDate,
+            est_hours: task.estHours || 0,
+            actual_hours: 0,
+            actual_fees: 0,
+            assignees: task.assignees || [],
+            predecessors: task.predecessors || [],
+            successors: task.successors || []
+          })
+          .select()
+          .single();
+        
+        if (error) {
+          console.error('Add task error:', error);
+          return task;
+        }
+        return { ...task, id: data.id };
+      } catch (err) {
+        console.error('Add task error:', err);
+        return task;
+      }
+    }
     
     // ==================== DATA ====================
     let appData = {
@@ -2525,6 +2814,103 @@
       document.getElementById('modal-configure-columns').classList.add('visible');
     });
 
+    // Add Client button
+    document.getElementById('add-client-btn').addEventListener('click', () => {
+      document.getElementById('new-client-name').value = '';
+      document.getElementById('new-client-initials').value = '';
+      document.getElementById('modal-add-client').classList.add('visible');
+    });
+
+    // Save New Client
+    document.getElementById('save-new-client').addEventListener('click', async () => {
+      const name = document.getElementById('new-client-name').value.trim();
+      const initials = document.getElementById('new-client-initials').value.trim() || name.substring(0,2).toUpperCase();
+      const color = document.getElementById('new-client-color').value;
+      
+      if (!name) {
+        showToast('Please enter a client name', 'error');
+        return;
+      }
+      
+      let newClient = {
+        id: 'c' + Date.now(),
+        name: name,
+        initials: initials,
+        color: color,
+        status: 'active',
+        budget: 0,
+        roleAssignments: {},
+        observers: [],
+        tasks: [],
+        activity: [],
+        kanbanColumns: [
+          { id: 'not_started', label: 'Not Started', color: '#6e7681' },
+          { id: 'started', label: 'Started', color: '#58a6ff' },
+          { id: 'complete', label: 'Completed', color: '#3fb950' }
+        ]
+      };
+      
+      if (USE_SUPABASE) {
+        newClient = await addClientToSupabase(newClient);
+      }
+      
+      appData.clients.push(newClient);
+      appData.currentClientId = newClient.id;
+      
+      document.getElementById('modal-add-client').classList.remove('visible');
+      showToast(`Client "${name}" added!`, 'success');
+      renderAll();
+    });
+
+    // Save New Task
+    document.getElementById('save-new-task').addEventListener('click', async () => {
+      const title = document.getElementById('new-task-title').value.trim();
+      const type = document.getElementById('new-task-type').value;
+      const status = document.getElementById('new-task-status').value;
+      const dueDate = document.getElementById('new-task-due').value;
+      const estHours = parseInt(document.getElementById('new-task-hours').value) || 0;
+      
+      if (!title) {
+        showToast('Please enter a task title', 'error');
+        return;
+      }
+      
+      const client = getClient();
+      if (!client) return;
+      
+      // Generate task number
+      const topLevelCount = client.tasks.length;
+      const taskNumber = (topLevelCount + 1) + '.0';
+      
+      let newTask = {
+        id: 't' + Date.now(),
+        number: taskNumber,
+        title: title,
+        type: type,
+        status: status,
+        dueDate: dueDate,
+        estHours: estHours,
+        actualHours: 0,
+        actualFees: 0,
+        assignees: [],
+        predecessors: [],
+        successors: [],
+        expanded: true,
+        children: []
+      };
+      
+      if (USE_SUPABASE) {
+        newTask = await addTaskToSupabase(newTask, client.id);
+      }
+      
+      client.tasks.push(newTask);
+      
+      document.getElementById('modal-add-task').classList.remove('visible');
+      document.getElementById('new-task-title').value = '';
+      showToast(`Task "${title}" added!`, 'success');
+      renderTaskTracker();
+    });
+
     // Render All
     function renderAll() {
       const client = getClient();
@@ -2538,7 +2924,21 @@
       renderActivity();
     }
 
-    renderAll();
+    // Initialize app
+    async function initApp() {
+      if (USE_SUPABASE) {
+        showToast('Connecting to database...', 'info');
+        const loaded = await loadFromSupabase();
+        if (loaded) {
+          showToast('Connected to Supabase!', 'success');
+        } else {
+          showToast('Using local data (Supabase unavailable)', 'warning');
+        }
+      }
+      renderAll();
+    }
+    
+    initApp();
     console.log('🚀 ClientHub V3 loaded');
   </script>
 </body>
