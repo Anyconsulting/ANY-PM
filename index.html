@@ -1991,6 +1991,92 @@
     </div>
   </div>
 
+  <!-- Add Lead Modal -->
+  <div class="modal-overlay" id="modal-add-lead">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Add New Lead</h2>
+        <button class="modal-close" data-close="modal-add-lead">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Company/Lead Name</label>
+          <input type="text" id="new-lead-name" placeholder="e.g., Tech Startup Inc.">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Stage</label>
+            <select id="new-lead-stage">
+              <option value="new">New</option>
+              <option value="contacted">Contacted</option>
+              <option value="proposal">Proposal</option>
+              <option value="won">Won</option>
+              <option value="lost">Lost</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Color</label>
+            <select id="new-lead-color">
+              <option value="cyan">Cyan</option>
+              <option value="blue">Blue</option>
+              <option value="green">Green</option>
+              <option value="purple">Purple</option>
+              <option value="orange">Orange</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Contact Email</label>
+          <input type="email" id="new-lead-email" placeholder="contact@company.com">
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="new-lead-notes" rows="3" placeholder="Any notes about this lead..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close="modal-add-lead">Cancel</button>
+        <button class="btn btn-primary" id="save-new-lead">Add Lead</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Apply Template Modal -->
+  <div class="modal-overlay" id="modal-apply-template">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>Apply Template</h2>
+        <button class="modal-close" data-close="modal-apply-template">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Select Template</label>
+          <select id="template-select">
+            <option value="month-close">Month-End Close</option>
+            <option value="quarterly-review">Quarterly Review</option>
+            <option value="year-end">Year-End Close</option>
+            <option value="payroll">Payroll Processing</option>
+            <option value="onboarding">New Client Onboarding</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Start Date</label>
+          <input type="date" id="template-start-date">
+        </div>
+        <div class="form-group">
+          <label>Template Preview</label>
+          <div id="template-preview" style="background: var(--bg-tertiary); padding: 0.75rem; border-radius: 6px; font-size: 0.85rem; max-height: 200px; overflow-y: auto;">
+            <div style="color: var(--text-secondary);">Select a template to see tasks...</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-close="modal-apply-template">Cancel</button>
+        <button class="btn btn-primary" id="apply-template-btn">Apply Template</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-container" id="toast-container"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -2785,6 +2871,31 @@
       });
     });
 
+    // Sidebar nav items
+    document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+      item.addEventListener('click', () => {
+        const view = item.dataset.view;
+        
+        if (view === 'templates') {
+          // Open templates modal
+          document.getElementById('template-start-date').value = new Date().toISOString().split('T')[0];
+          updateTemplatePreview();
+          document.getElementById('modal-apply-template').classList.add('visible');
+        } else if (view === 'dashboard') {
+          showToast('Dashboard view coming soon!', 'info');
+        }
+      });
+    });
+
+    // Report items
+    document.querySelectorAll('.report-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const report = item.dataset.report;
+        showToast(`Running ${report} report...`, 'info');
+        // Future: implement actual report views
+      });
+    });
+
     // Modals
     document.querySelectorAll('[data-close]').forEach(btn => {
       btn.addEventListener('click', () => document.getElementById(btn.dataset.close).classList.remove('visible'));
@@ -2908,6 +3019,256 @@
       document.getElementById('modal-add-task').classList.remove('visible');
       document.getElementById('new-task-title').value = '';
       showToast(`Task "${title}" added!`, 'success');
+      renderTaskTracker();
+    });
+
+    // Add Lead button
+    document.getElementById('add-lead-btn').addEventListener('click', () => {
+      document.getElementById('new-lead-name').value = '';
+      document.getElementById('new-lead-email').value = '';
+      document.getElementById('new-lead-notes').value = '';
+      document.getElementById('modal-add-lead').classList.add('visible');
+    });
+
+    // Save New Lead
+    document.getElementById('save-new-lead').addEventListener('click', async () => {
+      const name = document.getElementById('new-lead-name').value.trim();
+      const stage = document.getElementById('new-lead-stage').value;
+      const color = document.getElementById('new-lead-color').value;
+      const email = document.getElementById('new-lead-email').value.trim();
+      const notes = document.getElementById('new-lead-notes').value.trim();
+      
+      if (!name) {
+        showToast('Please enter a lead name', 'error');
+        return;
+      }
+      
+      let newLead = {
+        id: 'l' + Date.now(),
+        name: name,
+        stage: stage,
+        color: color,
+        email: email,
+        notes: notes
+      };
+      
+      if (USE_SUPABASE && supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient
+            .from('leads')
+            .insert({
+              name: name,
+              stage: stage,
+              color: color,
+              email: email,
+              notes: notes
+            })
+            .select()
+            .single();
+          
+          if (!error && data) {
+            newLead.id = data.id;
+          }
+        } catch (err) {
+          console.error('Add lead error:', err);
+        }
+      }
+      
+      appData.leads.push(newLead);
+      
+      document.getElementById('modal-add-lead').classList.remove('visible');
+      showToast(`Lead "${name}" added!`, 'success');
+      renderSidebar();
+    });
+
+    // Apply Template button
+    document.getElementById('btn-apply-template').addEventListener('click', () => {
+      // Set default date to today
+      document.getElementById('template-start-date').value = new Date().toISOString().split('T')[0];
+      updateTemplatePreview();
+      document.getElementById('modal-apply-template').classList.add('visible');
+    });
+
+    // Template select change
+    document.getElementById('template-select').addEventListener('change', updateTemplatePreview);
+
+    function updateTemplatePreview() {
+      const templateId = document.getElementById('template-select').value;
+      const previewEl = document.getElementById('template-preview');
+      
+      const templates = {
+        'month-close': [
+          '1.0 Month-End Close',
+          '  1.1 System Entry',
+          '  1.2 Bank Reconciliations',
+          '  1.3 Book Review',
+          '  1.4 Issue Financial Statements'
+        ],
+        'quarterly-review': [
+          '1.0 Quarterly Review',
+          '  1.1 Financial Analysis',
+          '  1.2 Budget vs Actual',
+          '  1.3 Client Meeting',
+          '  1.4 Quarterly Report'
+        ],
+        'year-end': [
+          '1.0 Year-End Close',
+          '  1.1 Final Adjustments',
+          '  1.2 Depreciation',
+          '  1.3 Accruals Review',
+          '  1.4 Tax Preparation',
+          '  1.5 Issue Annual Statements'
+        ],
+        'payroll': [
+          '1.0 Payroll Processing',
+          '  1.1 Timesheet Review',
+          '  1.2 Calculate Wages',
+          '  1.3 Process Deductions',
+          '  1.4 Submit Payroll'
+        ],
+        'onboarding': [
+          '1.0 New Client Onboarding',
+          '  1.1 Gather Documents',
+          '  1.2 Setup in QBO',
+          '  1.3 Import Historical Data',
+          '  1.4 Initial Review',
+          '  1.5 Client Training'
+        ]
+      };
+      
+      const tasks = templates[templateId] || [];
+      previewEl.innerHTML = tasks.map(t => `<div style="padding: 2px 0; ${t.startsWith('  ') ? 'padding-left: 1rem; color: var(--text-secondary);' : 'font-weight: 500;'}">${t}</div>`).join('');
+    }
+
+    // Apply Template
+    document.getElementById('apply-template-btn').addEventListener('click', async () => {
+      const templateId = document.getElementById('template-select').value;
+      const startDate = document.getElementById('template-start-date').value;
+      const client = getClient();
+      
+      if (!client) {
+        showToast('Please select a client first', 'error');
+        return;
+      }
+      
+      if (!startDate) {
+        showToast('Please select a start date', 'error');
+        return;
+      }
+      
+      const templates = {
+        'month-close': {
+          name: 'Month-End Close',
+          tasks: [
+            { title: 'System Entry', days: 3 },
+            { title: 'Bank Reconciliations', days: 5 },
+            { title: 'Book Review', days: 7 },
+            { title: 'Issue Financial Statements', days: 10 }
+          ]
+        },
+        'quarterly-review': {
+          name: 'Quarterly Review',
+          tasks: [
+            { title: 'Financial Analysis', days: 5 },
+            { title: 'Budget vs Actual', days: 7 },
+            { title: 'Client Meeting', days: 10 },
+            { title: 'Quarterly Report', days: 14 }
+          ]
+        },
+        'year-end': {
+          name: 'Year-End Close',
+          tasks: [
+            { title: 'Final Adjustments', days: 7 },
+            { title: 'Depreciation', days: 10 },
+            { title: 'Accruals Review', days: 14 },
+            { title: 'Tax Preparation', days: 21 },
+            { title: 'Issue Annual Statements', days: 30 }
+          ]
+        },
+        'payroll': {
+          name: 'Payroll Processing',
+          tasks: [
+            { title: 'Timesheet Review', days: 1 },
+            { title: 'Calculate Wages', days: 2 },
+            { title: 'Process Deductions', days: 2 },
+            { title: 'Submit Payroll', days: 3 }
+          ]
+        },
+        'onboarding': {
+          name: 'New Client Onboarding',
+          tasks: [
+            { title: 'Gather Documents', days: 3 },
+            { title: 'Setup in QBO', days: 5 },
+            { title: 'Import Historical Data', days: 10 },
+            { title: 'Initial Review', days: 14 },
+            { title: 'Client Training', days: 21 }
+          ]
+        }
+      };
+      
+      const template = templates[templateId];
+      if (!template) return;
+      
+      const baseDate = new Date(startDate);
+      const topLevelNum = client.tasks.length + 1;
+      
+      // Create milestone
+      const milestone = {
+        id: 't' + Date.now(),
+        number: topLevelNum + '.0',
+        title: template.name,
+        type: 'milestone',
+        status: 'not_started',
+        dueDate: '',
+        estHours: 0,
+        actualHours: 0,
+        actualFees: 0,
+        assignees: [],
+        predecessors: [],
+        successors: [],
+        expanded: true,
+        children: []
+      };
+      
+      // Create child tasks
+      for (let i = 0; i < template.tasks.length; i++) {
+        const t = template.tasks[i];
+        const dueDate = new Date(baseDate);
+        dueDate.setDate(dueDate.getDate() + t.days);
+        
+        const childTask = {
+          id: 't' + Date.now() + i,
+          number: topLevelNum + '.' + (i + 1),
+          title: t.title,
+          type: 'task',
+          status: 'not_started',
+          dueDate: dueDate.toISOString().split('T')[0],
+          estHours: 4,
+          actualHours: 0,
+          actualFees: 0,
+          assignees: [],
+          predecessors: i > 0 ? [milestone.children[i-1]?.id].filter(Boolean) : [],
+          successors: [],
+          expanded: true,
+          children: []
+        };
+        
+        if (USE_SUPABASE) {
+          const saved = await addTaskToSupabase(childTask, client.id);
+          childTask.id = saved.id;
+        }
+        
+        milestone.children.push(childTask);
+      }
+      
+      if (USE_SUPABASE) {
+        await addTaskToSupabase(milestone, client.id);
+      }
+      
+      client.tasks.push(milestone);
+      
+      document.getElementById('modal-apply-template').classList.remove('visible');
+      showToast(`Template "${template.name}" applied!`, 'success');
       renderTaskTracker();
     });
 
